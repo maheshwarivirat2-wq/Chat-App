@@ -1,20 +1,24 @@
 const app = document.getElementById('app');
 const state = {
   login: { username: '', password: '' },
-  create: { username: '', password: '' }
+  create: { username: '', password: '' },
+  currentUser: ''
 };
 
-const getStoredCreds = () => {
-  try {
-    return JSON.parse(localStorage.getItem('chatAuth')) ?? null;
-  } catch {
-    return null;
+async function requestAuth(path, username, password) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.detail || 'Something went wrong. Please try again.');
   }
-};
 
-const storeCreds = (username, password) => {
-  localStorage.setItem('chatAuth', JSON.stringify({ username, password }));
-};
+  return payload;
+}
 
 function setRoute(route) {
   window.location.hash = route;
@@ -48,7 +52,7 @@ function renderLogin(error = '') {
     </section>`;
 
   document.getElementById('goCreate').onclick = () => setRoute('create');
-  document.getElementById('loginForm').onsubmit = (e) => {
+  document.getElementById('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     const username = loginUsername.value.trim();
     const password = loginPassword.value;
@@ -56,11 +60,13 @@ function renderLogin(error = '') {
 
     if (!username || !password) return renderLogin('Username and password are required.');
 
-    const creds = getStoredCreds();
-    if (!creds) return renderLogin('No account found. Please create one first.');
-    if (creds.username !== username || creds.password !== password) return renderLogin('Invalid username or password.');
-
-    setRoute('success');
+    try {
+      const result = await requestAuth('/api/login', username, password);
+      state.currentUser = result.username;
+      setRoute('success');
+    } catch (err) {
+      renderLogin(err.message);
+    }
   };
 }
 
@@ -92,7 +98,7 @@ function renderCreate(error = '') {
     </section>`;
 
   document.getElementById('goLogin').onclick = () => setRoute('login');
-  document.getElementById('createForm').onsubmit = (e) => {
+  document.getElementById('createForm').onsubmit = async (e) => {
     e.preventDefault();
     const username = createUsername.value.trim();
     const password = createPassword.value;
@@ -100,14 +106,19 @@ function renderCreate(error = '') {
 
     if (!username || !password) return renderCreate('Username and create password are required.');
 
-    storeCreds(username, password);
-    state.login = { username, password };
-    setRoute('success');
+    try {
+      const result = await requestAuth('/api/signup', username, password);
+      state.login = { username, password };
+      state.currentUser = result.username;
+      setRoute('success');
+    } catch (err) {
+      renderCreate(err.message);
+    }
   };
 }
 
 function renderSuccess() {
-  const currentUser = state.login.username || getStoredCreds()?.username || 'there';
+  const currentUser = state.currentUser || state.login.username || 'there';
   app.innerHTML = `
     <section class="auth-card success">
       <div class="auth-icon" aria-hidden="true"></div>
@@ -118,6 +129,7 @@ function renderSuccess() {
 
   document.getElementById('logoutBtn').onclick = () => {
     state.login = { username: '', password: '' };
+    state.currentUser = '';
     setRoute('login');
   };
 }
